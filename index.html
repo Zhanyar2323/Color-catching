@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Color Catcher</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: linear-gradient(#222, #000);
+        font-family: system-ui, sans-serif;
+      }
+      canvas {
+        display: block;
+      }
+
+      button {
+        padding: 10px 18px;
+        margin: 6px;
+        font-size: 16px;
+        border-radius: 8px;
+        border: none;
+        background: #444;
+        color: white;
+        cursor: pointer;
+      }
+      #ui {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        color: white;
+        z-index: 10;
+      }
+      #overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        color: white;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+      }
+      #countdown {
+        font-size: 80px;
+        font-weight: bold;
+      }
+      .hidden {
+        display: none;
+      }
+      #leaderboard {
+        text-align: left;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="ui">
+      <div id="score">Score: 0</div>
+      <div id="lives">Lives: 3</div>
+      <div id="level">Level: 1</div>
+      <button id="pauseBtn" onclick="togglePause()">Pause</button>
+    </div>
+
+    <div id="overlay">
+      <!-- MENU -->
+      <div id="menu">
+        <h1>🎮 Color Catcher</h1>
+        <p>Select Difficulty</p>
+        <button onclick="setDifficulty('easy')">Easy</button>
+        <button onclick="setDifficulty('normal')">Normal</button>
+        <button onclick="setDifficulty('hard')">Hard</button>
+      </div>
+
+      <!-- COUNTDOWN -->
+      <div id="countdown" class="hidden">3</div>
+
+      <!-- GAME OVER -->
+      <div id="gameOver" class="hidden">
+        <h2>Game Over</h2>
+        <p id="finalScore"></p>
+        <button onclick="submitScore()">Submit Score</button>
+        <button onclick="backToMenu()">Main Menu</button>
+      </div>
+
+      <!-- LEADERBOARD -->
+      <div id="leaderboard" class="hidden">
+        <h2>🏆 Leaderboard</h2>
+        <ol id="board"></ol>
+        <button onclick="backToMenu()">Back</button>
+      </div>
+    </div>
+
+    <canvas id="game"></canvas>
+
+    <script>
+      /* ================= CORE ================= */
+      const canvas = document.getElementById("game");
+      const ctx = canvas.getContext("2d");
+      canvas.width = innerWidth;
+      canvas.height = innerHeight;
+
+      let gameState = "menu";
+      let score = 0,
+        lives = 3,
+        level = 1;
+      let difficulty = "normal";
+      let balls = [];
+      let isPaused = false;
+
+      const DIFFICULTY = {
+        easy: { speed: 2, spawn: 2000 },
+        normal: { speed: 3, spawn: 1300 },
+        hard: { speed: 4.5, spawn: 800 },
+      };
+
+      const COLORS = ["red", "blue", "green", "yellow", "purple"];
+
+      /* ================= UI ================= */
+      const menu = document.getElementById("menu");
+      const overlay = document.getElementById("overlay");
+      const countdownEl = document.getElementById("countdown");
+      const gameOverEl = document.getElementById("gameOver");
+      const finalScoreEl = document.getElementById("finalScore");
+      const leaderboardEl = document.getElementById("leaderboard");
+      const boardEl = document.getElementById("board");
+      const pauseBtn = document.getElementById("pauseBtn");
+
+      /* ================= PADDLE ================= */
+      const paddle = {
+        w: 120,
+        h: 18,
+        x: canvas.width / 2 - 60,
+        y: canvas.height - 40,
+        color: COLORS[0],
+        speed: 10,
+      };
+
+      /* ================= BALL ================= */
+      function spawnBall() {
+        const ballCount = difficulty === "hard" ? 2 : 1; // spawn extra in hard
+        for (let i = 0; i < ballCount; i++) {
+          balls.push({
+            x: Math.random() * (canvas.width - 28) + 14,
+            y: -20,
+            r: 14,
+            speed: DIFFICULTY[difficulty].speed + level * 0.3,
+            speedX: (Math.random() - 0.5) * 4,
+            color: COLORS[Math.floor(Math.random() * COLORS.length)],
+          });
+        }
+      }
+
+      /* ================= INPUT ================= */
+      addEventListener("mousemove", (e) => {
+        paddle.x = e.clientX - paddle.w / 2;
+        // keep within bounds
+        if (paddle.x < 0) paddle.x = 0;
+        if (paddle.x + paddle.w > canvas.width)
+          paddle.x = canvas.width - paddle.w;
+      });
+      addEventListener("touchmove", (e) => {
+        paddle.x = e.touches[0].clientX - paddle.w / 2;
+        if (paddle.x < 0) paddle.x = 0;
+        if (paddle.x + paddle.w > canvas.width)
+          paddle.x = canvas.width - paddle.w;
+      });
+
+      /* ================= GAME FLOW ================= */
+      function setDifficulty(diff) {
+        difficulty = diff;
+        startCountdown();
+      }
+
+      function startCountdown() {
+        gameState = "menu";
+        menu.classList.add("hidden");
+        countdownEl.classList.remove("hidden");
+        let count = 3;
+        countdownEl.textContent = count;
+
+        const interval = setInterval(() => {
+          count--;
+          countdownEl.textContent = count > 0 ? count : "GO!";
+          if (count < 0) {
+            clearInterval(interval);
+            countdownEl.classList.add("hidden");
+            overlay.classList.add("hidden");
+            startGame();
+          }
+        }, 800);
+      }
+
+      function startGame() {
+        gameState = "play";
+        score = 0;
+        lives = 3;
+        level = 1;
+        balls = [];
+        spawnBall();
+        isPaused = false;
+        pauseBtn.textContent = "Pause";
+      }
+
+      function endGame() {
+        gameState = "over";
+        overlay.classList.remove("hidden");
+        gameOverEl.classList.remove("hidden");
+        finalScoreEl.textContent = `Score: ${score}`;
+      }
+
+      /* ================= LEADERBOARD ================= */
+      function submitScore() {
+        const name = prompt("Enter your name:");
+        if (!name) return;
+
+        const board = JSON.parse(localStorage.getItem("cc_board") || "[]");
+        board.push({ name, score });
+        board.sort((a, b) => b.score - a.score);
+        localStorage.setItem("cc_board", JSON.stringify(board.slice(0, 10)));
+        showLeaderboard();
+      }
+
+      function showLeaderboard() {
+        overlay.classList.remove("hidden");
+        menu.classList.add("hidden");
+        gameOverEl.classList.add("hidden");
+        leaderboardEl.classList.remove("hidden");
+
+        boardEl.innerHTML = "";
+        const board = JSON.parse(localStorage.getItem("cc_board") || "[]");
+        board.forEach((e) => {
+          const li = document.createElement("li");
+          li.textContent = `${e.name} — ${e.score}`;
+          boardEl.appendChild(li);
+        });
+      }
+
+      function backToMenu() {
+        overlay.classList.remove("hidden");
+        leaderboardEl.classList.add("hidden");
+        gameOverEl.classList.add("hidden");
+        menu.classList.remove("hidden");
+        gameState = "menu";
+      }
+
+      function togglePause() {
+        isPaused = !isPaused;
+        pauseBtn.textContent = isPaused ? "Resume" : "Pause";
+      }
+
+      /* ================= UPDATE ================= */
+      let lastSpawn = 0;
+      function update(ts) {
+        if (gameState !== "play" || isPaused) return;
+
+        if (ts - lastSpawn > DIFFICULTY[difficulty].spawn) {
+          spawnBall();
+          lastSpawn = ts;
+          // spawn extra balls in hard mode periodically
+          if (difficulty === "hard") {
+            spawnBall();
+          }
+        }
+
+        balls.forEach((b, i) => {
+          // bounce off sides
+          if (b.x + b.r > canvas.width || b.x - b.r < 0) {
+            b.x = Math.max(b.r, Math.min(canvas.width - b.r, b.x));
+            b.speedX *= -1;
+          }
+          // update position
+          b.x += b.speedX || 0;
+          b.y += b.speed;
+
+          // collision with paddle
+          if (
+            b.y + b.r >= paddle.y &&
+            b.x > paddle.x &&
+            b.x < paddle.x + paddle.w
+          ) {
+            if (b.color === paddle.color) {
+              score++;
+              paddle.color = COLORS[Math.floor(Math.random() * COLORS.length)];
+              if (score % 10 === 0) level++;
+            } else {
+              lives--;
+              if (lives <= 0) endGame();
+            }
+            balls.splice(i, 1);
+          }
+
+          // remove balls below screen
+          if (b.y - b.r > canvas.height) balls.splice(i, 1);
+        });
+
+        document.getElementById("score").textContent = `Score: ${score}`;
+        document.getElementById("lives").textContent = `Lives: ${lives}`;
+        document.getElementById("level").textContent = `Level: ${level}`;
+      }
+
+      /* ================= DRAW ================= */
+      function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = paddle.color;
+        ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
+        balls.forEach((b) => {
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+          ctx.fillStyle = b.color;
+          ctx.fill();
+        });
+      }
+
+      /* ================= LOOP ================= */
+      function loop(ts) {
+        if (gameState === "play") {
+          if (!isPaused) {
+            update(ts);
+            draw();
+          }
+        }
+        requestAnimationFrame(loop);
+      }
+      loop();
+    </script>
+  </body>
+</html>
