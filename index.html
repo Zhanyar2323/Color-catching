@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Color Catcher+ v1.4</title>
+
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: radial-gradient(circle at top, #222, #000);
+        font-family: system-ui, sans-serif;
+      }
+
+      canvas {
+        display: block;
+      }
+
+      #ui {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        color: white;
+        z-index: 10;
+      }
+
+      button {
+        padding: 12px 20px;
+        font-size: 16px;
+        border-radius: 10px;
+        border: none;
+        background: #444;
+        color: white;
+        cursor: pointer;
+      }
+
+      button.selected {
+        background: #00bcd4;
+      }
+
+      #overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.65);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        z-index: 20;
+        flex-direction: column;
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      #menu,
+      #gameOver,
+      #leaderboard {
+        text-align: center;
+      }
+
+      #leaderboard ol {
+        text-align: left;
+        padding-left: 20px;
+      }
+
+      #countdown {
+        font-size: 90px;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="ui">
+      <div id="score">Score: 0</div>
+      <div id="combo">Combo: x1</div>
+      <div id="lives">Lives: 3</div>
+      <div id="level">Level: 1</div>
+      <button onclick="togglePause()">Pause</button>
+    </div>
+
+    <div id="overlay">
+      <div id="menu">
+        <h1>🎮 Color Catcher+</h1>
+        <p>Difficulty</p>
+        <button onclick="setDifficulty('easy')">Easy</button>
+        <button class="selected" onclick="setDifficulty('normal')">
+          Normal
+        </button>
+        <button onclick="setDifficulty('hard')">Hard</button><br /><br />
+        <button onclick="startFromMenu()">▶ Play</button><br /><br />
+        <button onclick="showLeaderboard()">🏆 Leaderboard</button>
+      </div>
+
+      <div id="leaderboard" class="hidden">
+        <h2>🏆 Leaderboard</h2>
+        <ol id="scoreList"></ol>
+        <button onclick="backToMenu()">Back</button>
+      </div>
+
+      <div id="countdown" class="hidden">3</div>
+
+      <div id="gameOver" class="hidden">
+        <h2>Game Over</h2>
+        <p id="finalScore"></p>
+        <button onclick="restart()">Restart</button>
+        <button onclick="showLeaderboard()">Leaderboard</button>
+        <button onclick="backToMenu()">Main Menu</button>
+      </div>
+    </div>
+
+    <canvas id="game"></canvas>
+
+    <script>
+      /* ================= LEADERBOARD ================= */
+      const SCORE_KEY = "colorCatcherScores";
+
+      function saveScore(name, score) {
+        const scores = JSON.parse(localStorage.getItem(SCORE_KEY) || "[]");
+        scores.push({ name, score });
+        scores.sort((a, b) => b.score - a.score);
+        scores.splice(5);
+        localStorage.setItem(SCORE_KEY, JSON.stringify(scores));
+      }
+
+      function showLeaderboard() {
+        const list = document.getElementById("scoreList");
+        list.innerHTML = "";
+        const scores = JSON.parse(localStorage.getItem(SCORE_KEY) || "[]");
+
+        if (scores.length === 0) {
+          list.innerHTML = "<li>No scores yet</li>";
+        } else {
+          scores.forEach((s) => {
+            const li = document.createElement("li");
+            li.textContent = `${s.name} — ${s.score}`;
+            list.appendChild(li);
+          });
+        }
+
+        document
+          .querySelectorAll("#menu, #gameOver")
+          .forEach((e) => e.classList.add("hidden"));
+        document.getElementById("leaderboard").classList.remove("hidden");
+      }
+
+      /* ================= SETUP ================= */
+      const canvas = document.getElementById("game");
+      const ctx = canvas.getContext("2d");
+      function resize() {
+        canvas.width = innerWidth;
+        canvas.height = innerHeight;
+      }
+      resize();
+      addEventListener("resize", resize);
+
+      const COLORS = ["red", "blue", "green", "yellow", "purple"];
+
+      /* 🔥 HARD MODE BUFFED */
+      const DIFFICULTY = {
+        easy: { speed: 2, spawn: 1800, side: 2 },
+        normal: { speed: 3.2, spawn: 1200, side: 3 },
+        hard: { speed: 6.5, spawn: 600, side: 4.5 },
+      };
+
+      let gameState = "menu",
+        difficulty = "normal";
+      let balls = [],
+        particles = [];
+      let score = 0,
+        lives = 3,
+        level = 1,
+        combo = 1,
+        streak = 0;
+      let lastSpawn = 0,
+        isPaused = false,
+        shake = 0;
+
+      /* ================= AUDIO ================= */
+      const sounds = {
+        good: new Audio(
+          "https://assets.mixkit.co/sfx/preview/mixkit-game-ball-tap-2073.mp3"
+        ),
+        bad: new Audio(
+          "https://assets.mixkit.co/sfx/preview/mixkit-player-losing-or-failing-2042.mp3"
+        ),
+        level: new Audio(
+          "https://assets.mixkit.co/sfx/preview/mixkit-game-level-completed-2059.mp3"
+        ),
+        over: new Audio(
+          "https://assets.mixkit.co/sfx/preview/mixkit-arcade-retro-game-over-213.mp3"
+        ),
+      };
+
+      /* ================= PADDLE ================= */
+      const paddle = { w: 120, h: 18, x: 0, y: 0, color: "red" };
+      function resetPaddle() {
+        paddle.x = canvas.width / 2 - paddle.w / 2;
+        paddle.y = canvas.height - 50;
+        paddle.color = COLORS[(Math.random() * COLORS.length) | 0];
+      }
+
+      /* ================= INPUT ================= */
+      addEventListener("mousemove", (e) => {
+        if (gameState === "play") paddle.x = e.clientX - paddle.w / 2;
+      });
+      addEventListener(
+        "touchmove",
+        (e) => {
+          if (gameState === "play") {
+            paddle.x = e.touches[0].clientX - paddle.w / 2;
+            e.preventDefault();
+          }
+        },
+        { passive: false }
+      );
+
+      /* ================= MENU ================= */
+      function setDifficulty(d) {
+        difficulty = d;
+        [...document.querySelectorAll("#menu button")].forEach((b) =>
+          b.classList.remove("selected")
+        );
+        event.target.classList.add("selected");
+      }
+
+      function startFromMenu() {
+        document.getElementById("menu").classList.add("hidden");
+        startCountdown();
+      }
+
+      function backToMenu() {
+        gameState = "menu";
+        document
+          .querySelectorAll("#leaderboard, #gameOver")
+          .forEach((e) => e.classList.add("hidden"));
+        document.getElementById("menu").classList.remove("hidden");
+      }
+
+      /* ================= COUNTDOWN ================= */
+      function startCountdown() {
+        const c = document.getElementById("countdown");
+        c.classList.remove("hidden");
+        let n = 3;
+        c.textContent = n;
+        const t = setInterval(() => {
+          n--;
+          if (n > 0) c.textContent = n;
+          else if (n === 0) c.textContent = "GO!";
+          else {
+            clearInterval(t);
+            c.classList.add("hidden");
+            document.getElementById("overlay").classList.add("hidden");
+            startGame();
+          }
+        }, 800);
+      }
+
+      /* ================= GAME ================= */
+      function startGame() {
+        gameState = "play";
+        score = 0;
+        lives = 3;
+        level = 1;
+        combo = 1;
+        streak = 0;
+        balls = [];
+        particles = [];
+        resetPaddle();
+      }
+
+      function endGame() {
+        gameState = "over";
+        sounds.over.play();
+        document.getElementById("finalScore").textContent = "Score: " + score;
+        document.getElementById("overlay").classList.remove("hidden");
+        document.getElementById("gameOver").classList.remove("hidden");
+
+        const name = prompt("Enter your name:");
+        if (name) saveScore(name, score);
+      }
+
+      function restart() {
+        document.getElementById("gameOver").classList.add("hidden");
+        document.getElementById("overlay").classList.add("hidden");
+        startGame();
+      }
+
+      /* ================= SPAWN ================= */
+      function spawnBall() {
+        balls.push({
+          x: Math.random() * canvas.width,
+          y: -20,
+          r: 14,
+          speed: DIFFICULTY[difficulty].speed + level * 0.4,
+          vx: (Math.random() - 0.5) * DIFFICULTY[difficulty].side,
+          color: COLORS[(Math.random() * COLORS.length) | 0],
+        });
+      }
+
+      /* ================= UPDATE ================= */
+      function update(ts) {
+        if (gameState !== "play" || isPaused) return;
+
+        if (ts - lastSpawn > DIFFICULTY[difficulty].spawn) {
+          spawnBall();
+          lastSpawn = ts;
+        }
+
+        balls.forEach((b, i) => {
+          b.x += b.vx;
+          b.y += b.speed;
+          if (b.x < b.r || b.x > canvas.width - b.r) b.vx *= -1;
+
+          if (rectCircleColliding({ x: b.x, y: b.y, r: b.r }, paddle)) {
+            if (b.color === paddle.color) {
+              sounds.good.play();
+              streak++;
+              combo = 1 + Math.floor(streak / 3);
+              score += combo;
+              if (score % 10 === 0) {
+                level++;
+                sounds.level.play();
+              }
+              spawnParticles(b.x, b.y, b.color);
+            } else {
+              sounds.bad.play();
+              lives--;
+              streak = 0;
+              combo = 1;
+              shake = 10;
+              if (lives <= 0) endGame();
+            }
+            paddle.color = COLORS[(Math.random() * COLORS.length) | 0];
+            balls.splice(i, 1);
+          }
+        });
+
+        document.getElementById("score").textContent = "Score: " + score;
+        document.getElementById("combo").textContent = "Combo: x" + combo;
+        document.getElementById("lives").textContent = "Lives: " + lives;
+        document.getElementById("level").textContent = "Level: " + level;
+      }
+
+      /* ================= EFFECTS ================= */
+      function spawnParticles(x, y, color) {
+        for (let i = 0; i < 10; i++) {
+          particles.push({
+            x,
+            y,
+            vx: (Math.random() - 0.5) * 6,
+            vy: (Math.random() - 0.5) * 6,
+            life: 25,
+            color,
+          });
+        }
+      }
+
+      /* ================= DRAW ================= */
+      function draw() {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        if (shake > 0) {
+          ctx.translate(Math.random() * shake, Math.random() * shake);
+          shake--;
+        }
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (gameState !== "play") return;
+
+        ctx.fillStyle = paddle.color;
+        ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
+
+        balls.forEach((b) => {
+          ctx.fillStyle = b.color;
+          ctx.beginPath();
+          ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        particles.forEach((p) => {
+          ctx.globalAlpha = p.life / 25;
+          ctx.fillStyle = p.color;
+          ctx.fillRect(p.x, p.y, 3, 3);
+          ctx.globalAlpha = 1;
+        });
+      }
+
+      /* ================= COLLISION ================= */
+      function rectCircleColliding(circle, rect) {
+        const dx = Math.abs(circle.x - rect.x - rect.w / 2);
+        const dy = Math.abs(circle.y - rect.y - rect.h / 2);
+        if (dx > rect.w / 2 + circle.r || dy > rect.h / 2 + circle.r)
+          return false;
+        if (dx <= rect.w / 2 || dy <= rect.h / 2) return true;
+        return (dx - rect.w / 2) ** 2 + (dy - rect.h / 2) ** 2 <= circle.r ** 2;
+      }
+
+      /* ================= LOOP ================= */
+      function loop(ts) {
+        update(ts);
+        draw();
+        requestAnimationFrame(loop);
+      }
+      requestAnimationFrame(loop);
+
+      function togglePause() {
+        isPaused = !isPaused;
+      }
+    </script>
+  </body>
+</html>
