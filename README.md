@@ -27,10 +27,17 @@ and progressive difficulty.
 - Canvas rendering techniques
 - UX for mobile input
 
+I built this project to practice real-time game loops,
+collision detection, and performance optimization in vanilla JavaScript.
+
+
 ## 📂 How to Run
 Open `index.html` in your browser.
 
-![Gameplay Screenshot](<img width="1180" height="688" alt="image" src="https://github.com/user-attachments/assets/267b64f1-6e00-4adb-9443-490fb18945dc" />)
-(<img width="1180" height="688" alt="image" src="https://github.com/user-attachments/assets/c6278aca-9c0c-4c5e-987e-48b8f205b7b4" />)
+![Gameplay Screenshot](<img width="1180" height="688" alt="image" src="https://github.com/user-attachments/assets/267b64f1-6e00-4adb-9443-490fb18945dc" />
+
+![Gameplay Screenshot](<img width="1180" height="688" alt="image" src="https://github.com/user-attachments/assets/56b067c1-495d-445e-92f1-d04f4bb38e65" />
+
+
 
 
