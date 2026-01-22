@@ -30,6 +30,7 @@ and progressive difficulty.
 ## 📂 How to Run
 Open `index.html` in your browser.
 
-![Gameplay Screenshot](<img width="1180" height="688" alt="image" src="https://github.com/user-attachments/assets/267b64f1-6e00-4adb-9443-490fb18945dc" />)(<img width="1180" height="688" alt="image" src="https://github.com/user-attachments/assets/c6278aca-9c0c-4c5e-987e-48b8f205b7b4" />)
+![Gameplay Screenshot](<img width="1180" height="688" alt="image" src="https://github.com/user-attachments/assets/267b64f1-6e00-4adb-9443-490fb18945dc" />)
+(<img width="1180" height="688" alt="image" src="https://github.com/user-attachments/assets/c6278aca-9c0c-4c5e-987e-48b8f205b7b4" />)
 
 
